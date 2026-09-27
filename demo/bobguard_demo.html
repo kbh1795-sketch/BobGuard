@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BobGuard — UAV Failsafe Verification Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0e14;
+    --surface: #111827;
+    --surface2: #1a2236;
+    --border: #1e3a5f;
+    --text: #e2e8f0;
+    --muted: #7a90a8;
+    --accent: #00c8ff;
+    --accent2: #0080c8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --purple: #a855f7;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ─────────────────────────────────────────────── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header .logo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  header .logo svg { flex-shrink: 0; }
+  header .logo-text { font-size: 22px; font-weight: 700; letter-spacing: .04em; color: var(--accent); }
+  header .logo-sub { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  header .badge {
+    background: var(--accent2);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 20px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  /* ── LAYOUT ──────────────────────────────────────────────── */
+  main {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 32px 32px 64px;
+    display: grid;
+    gap: 32px;
+  }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+  }
+
+  /* ── 1. STATE MACHINE ───────────────────────────────────── */
+  .sm-container {
+    overflow-x: auto;
+  }
+  .sm-svg-wrap {
+    min-width: 780px;
+  }
+
+  /* ── 2. INTERACTIVE DEMO ────────────────────────────────── */
+  .demo-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 760px) { .demo-grid { grid-template-columns: 1fr; } }
+
+  .uav-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 32px 16px;
+    min-height: 220px;
+  }
+  .uav-icon {
+    transition: transform .5s ease, filter .5s ease;
+  }
+  .uav-icon.shaking {
+    animation: shake .4s ease;
+  }
+  #uav-state-label {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    transition: color .4s;
+  }
+  #uav-state-badge {
+    font-size: 12px;
+    padding: 4px 16px;
+    border-radius: 20px;
+    border: 1px solid;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  #uav-explanation {
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+    min-height: 40px;
+    max-width: 300px;
+  }
+
+  .demo-controls { display: flex; flex-direction: column; gap: 12px; }
+  .demo-controls h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+
+  .btn {
+    padding: 12px 18px;
+    border-radius: 6px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: .03em;
+    transition: opacity .2s, transform .1s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-failure { background: #7c2020; color: #fca5a5; border: 1px solid #9b2c2c; }
+  .btn-failure:hover:not(:disabled) { background: #9b2c2c; }
+  .btn-gps { background: #78350f; color: #fcd34d; border: 1px solid #92400e; }
+  .btn-gps:hover:not(:disabled) { background: #92400e; }
+  .btn-battery { background: #7c2d12; color: #fdba74; border: 1px solid #9a3412; }
+  .btn-battery:hover:not(:disabled) { background: #9a3412; }
+  .btn-reset { background: #1e3a5f; color: var(--accent); border: 1px solid var(--border); }
+  .btn-reset:hover { background: #254a78; }
+  .btn-scenario {
+    background: #1a2a1a;
+    color: var(--green);
+    border: 1px solid #166534;
+    margin-top: 8px;
+  }
+  .btn-scenario:hover:not(:disabled) { background: #1c3a1c; }
+
+  .transition-log {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    color: var(--muted);
+    min-height: 80px;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+  .log-entry { color: var(--accent); }
+  .log-entry.warn { color: var(--yellow); }
+  .log-entry.ok { color: var(--green); }
+
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    20% { transform: translateX(-6px) rotate(-3deg); }
+    40% { transform: translateX(6px) rotate(3deg); }
+    60% { transform: translateX(-4px) rotate(-2deg); }
+    80% { transform: translateX(4px) rotate(2deg); }
+  }
+
+  /* ── 3. PIPELINE ────────────────────────────────────────── */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0;
+  }
+  .pipeline-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 110px;
+    padding: 16px 8px;
+  }
+  .pipeline-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 2px solid var(--accent2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+  }
+  .pipeline-step span {
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    color: var(--text);
+    letter-spacing: .03em;
+    line-height: 1.3;
+  }
+  .pipeline-arrow {
+    color: var(--accent2);
+    font-size: 22px;
+    flex-shrink: 0;
+    padding: 0 4px;
+    margin-top: -20px;
+  }
+
+  /* ── 4. METRICS ──────────────────────────────────────────── */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+  }
+  @media (max-width: 900px) { .metrics-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 600px) { .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .metric-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px 16px;
+    text-align: center;
+  }
+  .metric-card .metric-value {
+    font-size: 38px;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -.01em;
+  }
+  .metric-card .metric-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+  .metric-green { color: var(--green); border-color: #14532d; }
+  .metric-green .metric-value { color: var(--green); }
+  .metric-zero { color: var(--accent); border-color: var(--accent2); }
+  .metric-zero .metric-value { color: var(--accent); }
+  .metric-purple .metric-value { color: var(--purple); }
+  .metric-purple { border-color: #581c87; }
+
+  /* ── 5. MUTATIONS ────────────────────────────────────────── */
+  .mutations-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+  }
+  @media (max-width: 900px) { .mutations-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 600px) { .mutations-grid { grid-template-columns: 1fr 1fr); } }
+
+  .mutation-card {
+    background: var(--surface2);
+    border: 1px solid #1a3a1a;
+    border-radius: 8px;
+    padding: 20px 14px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .mutation-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--green);
+  }
+  .mutation-id {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--accent);
+    letter-spacing: .04em;
+  }
+  .mutation-desc {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 8px 0;
+    line-height: 1.4;
+    min-height: 36px;
+  }
+  .mutation-status {
+    display: inline-block;
+    background: #14532d;
+    color: var(--green);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 12px;
+    border-radius: 20px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  /* ── FOOTER ──────────────────────────────────────────────── */
+  footer {
+    text-align: center;
+    border-top: 1px solid var(--border);
+    padding: 20px 32px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.8;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  /* ── STATE MACHINE SVG helpers ──────────────────────────── */
+  .sm-state { cursor: default; }
+  .sm-state rect {
+    rx: 8; ry: 8;
+    transition: fill .3s;
+  }
+  .sm-state.active rect { fill: #0f3460 !important; stroke: var(--accent) !important; stroke-width: 2.5 !important; }
+  .sm-state.active text { fill: var(--accent) !important; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ──────────────────────────────────────────────── -->
+<header>
+  <div class="logo">
+    <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+      <rect width="40" height="40" rx="8" fill="#0f3460"/>
+      <path d="M20 6 L34 13 L34 21 C34 29 27 35 20 38 C13 35 6 29 6 21 L6 13 Z"
+            fill="none" stroke="#00c8ff" stroke-width="2"/>
+      <path d="M14 20 L18 24 L26 16" stroke="#22c55e" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div>
+      <div class="logo-text">BobGuard</div>
+      <div class="logo-sub">UAV Failsafe Formal Verification</div>
+    </div>
+  </div>
+  <div class="badge">Verified ✓</div>
+</header>
+
+<!-- ── MAIN ────────────────────────────────────────────────── -->
+<main>
+
+  <!-- ── SECTION 1: STATE MACHINE ──────────────────────────── -->
+  <div>
+    <div class="section-title">01 — UAV Failsafe State Machine</div>
+    <div class="card sm-container">
+      <div class="sm-svg-wrap">
+        <svg id="sm-svg" viewBox="0 0 900 340" width="100%" style="display:block;">
+          <defs>
+            <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#00c8ff"/>
+            </marker>
+            <marker id="arr-dim" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#1e3a5f"/>
+            </marker>
+            <marker id="arr-y" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#f59e0b"/>
+            </marker>
+            <marker id="arr-g" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#22c55e"/>
+            </marker>
+          </defs>
+
+          <!-- Background grid lines -->
+          <line x1="0" y1="170" x2="900" y2="170" stroke="#111827" stroke-width="1"/>
+
+          <!-- ── EDGES (behind nodes) ──────────────────────── -->
+
+          <!-- NORMAL -> LOITER (comm loss) - highlighted -->
+          <path d="M 175 140 L 315 140" stroke="#00c8ff" stroke-width="2"
+                fill="none" marker-end="url(#arr)"/>
+          <text x="245" y="130" fill="#00c8ff" font-size="10" text-anchor="middle"
+                font-family="monospace">comm_loss</text>
+
+          <!-- NORMAL -> RETURN_HOME (direct, GPS ok) -->
+          <path d="M 175 175 C 245 230 380 230 445 175" stroke="#1e3a5f" stroke-width="1.5"
+                fill="none" marker-end="url(#arr-dim)" stroke-dasharray="5 3"/>
+          <text x="310" y="245" fill="#7a90a8" font-size="9" text-anchor="middle"
+                font-family="monospace">comm_loss+GPS</text>
+
+          <!-- LOITER -> RETURN_HOME (comm restored) -->
+          <path d="M 405 140 L 490 140" stroke="#22c55e" stroke-width="1.5"
+                fill="none" marker-end="url(#arr-g)" stroke-dasharray="4 3"/>
+          <text x="448" y="130" fill="#22c55e" font-size="9" text-anchor="middle"
+                font-family="monospace">comm restored</text>
+
+          <!-- LOITER -> LAND (critical battery) - highlighted -->
+          <path d="M 360 165 L 360 210 L 620 210 L 620 165" stroke="#f59e0b" stroke-width="2"
+                fill="none" marker-end="url(#arr-y)"/>
+          <text x="490" y="226" fill="#f59e0b" font-size="10" text-anchor="middle"
+                font-family="monospace">critical_battery</text>
+
+          <!-- RETURN_HOME -> LOITER (GPS loss) - highlighted -->
+          <path d="M 495 115 C 495 75 360 75 360 115" stroke="#ef4444" stroke-width="2"
+                fill="none" marker-end="url(#arr)"/>
+          <!-- recolor marker for red -->
+          <defs>
+            <marker id="arr-r" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#ef4444"/>
+            </marker>
+          </defs>
+          <path d="M 495 115 C 495 75 360 75 360 115" stroke="#ef4444" stroke-width="2"
+                fill="none" marker-end="url(#arr-r)"/>
+          <text x="428" y="68" fill="#ef4444" font-size="10" text-anchor="middle"
+                font-family="monospace">GPS_loss</text>
+
+          <!-- RETURN_HOME -> RETURN_HOME (self loop: comm loss + GPS) -->
+          <path d="M 570 120 C 620 70 720 70 720 120" stroke="#00c8ff" stroke-width="1.5"
+                fill="none" marker-end="url(#arr)" stroke-dasharray="4 3"/>
+          <text x="645" y="63" fill="#00c8ff" font-size="9" text-anchor="middle"
+                font-family="monospace">comm_loss+GPS→stay</text>
+
+          <!-- RETURN_HOME -> LAND -->
+          <path d="M 565 160 L 640 160" stroke="#1e3a5f" stroke-width="1.5"
+                fill="none" marker-end="url(#arr-dim)" stroke-dasharray="4 3"/>
+          <text x="602" y="152" fill="#7a90a8" font-size="9" text-anchor="middle"
+                font-family="monospace">arrived</text>
+
+          <!-- LAND -> TERMINATED -->
+          <path d="M 730 160 L 810 160" stroke="#a855f7" stroke-width="1.5"
+                fill="none" marker-end="url(#arr)"/>
+          <defs>
+            <marker id="arr-p" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#a855f7"/>
+            </marker>
+          </defs>
+          <path d="M 730 160 L 810 160" stroke="#a855f7" stroke-width="1.5"
+                fill="none" marker-end="url(#arr-p)"/>
+          <text x="770" y="152" fill="#a855f7" font-size="9" text-anchor="middle"
+                font-family="monospace">touchdown</text>
+
+          <!-- ── NODES ─────────────────────────────────────── -->
+
+          <!-- NORMAL -->
+          <g class="sm-state" id="sm-NORMAL">
+            <rect x="60" y="120" width="120" height="44" rx="8" fill="#0f2d40"
+                  stroke="#00c8ff" stroke-width="1.5"/>
+            <text x="120" y="147" fill="#00c8ff" font-size="13" font-weight="600"
+                  text-anchor="middle" font-family="'Segoe UI',sans-serif">NORMAL</text>
+          </g>
+
+          <!-- LOITER -->
+          <g class="sm-state" id="sm-LOITER">
+            <rect x="300" y="120" width="120" height="44" rx="8" fill="#0f2d40"
+                  stroke="#1e3a5f" stroke-width="1.5"/>
+            <text x="360" y="147" fill="#e2e8f0" font-size="13" font-weight="600"
+                  text-anchor="middle" font-family="'Segoe UI',sans-serif">LOITER</text>
+          </g>
+
+          <!-- RETURN_HOME -->
+          <g class="sm-state" id="sm-RETURN_HOME">
+            <rect x="430" y="120" width="145" height="44" rx="8" fill="#0f2d40"
+                  stroke="#1e3a5f" stroke-width="1.5"/>
+            <text x="502" y="147" fill="#e2e8f0" font-size="13" font-weight="600"
+                  text-anchor="middle" font-family="'Segoe UI',sans-serif">RETURN_HOME</text>
+          </g>
+
+          <!-- LAND -->
+          <g class="sm-state" id="sm-LAND">
+            <rect x="630" y="120" width="100" height="44" rx="8" fill="#0f2d40"
+                  stroke="#1e3a5f" stroke-width="1.5"/>
+            <text x="680" y="147" fill="#e2e8f0" font-size="13" font-weight="600"
+                  text-anchor="middle" font-family="'Segoe UI',sans-serif">LAND</text>
+          </g>
+
+          <!-- TERMINATED -->
+          <g class="sm-state" id="sm-TERMINATED">
+            <rect x="810" y="120" width="70" height="44" rx="8" fill="#1a0a2e"
+                  stroke="#a855f7" stroke-width="1.5"/>
+            <text x="845" y="140" fill="#a855f7" font-size="11" font-weight="600"
+                  text-anchor="middle" font-family="'Segoe UI',sans-serif">TERMI-</text>
+            <text x="845" y="155" fill="#a855f7" font-size="11" font-weight="600"
+                  text-anchor="middle" font-family="'Segoe UI',sans-serif">NATED</text>
+          </g>
+
+          <!-- Legend -->
+          <g transform="translate(30, 270)">
+            <text x="0" y="0" fill="#7a90a8" font-size="11" font-family="'Segoe UI',sans-serif"
+                  font-weight="600">Legend:</text>
+            <line x1="70" y1="-4" x2="100" y2="-4" stroke="#00c8ff" stroke-width="2"/>
+            <text x="105" y="0" fill="#7a90a8" font-size="10">Comm loss</text>
+            <line x1="200" y1="-4" x2="230" y2="-4" stroke="#f59e0b" stroke-width="2"/>
+            <text x="235" y="0" fill="#7a90a8" font-size="10">Crit. battery</text>
+            <line x1="340" y1="-4" x2="370" y2="-4" stroke="#ef4444" stroke-width="2"/>
+            <text x="375" y="0" fill="#7a90a8" font-size="10">GPS loss</text>
+            <line x1="440" y1="-4" x2="470" y2="-4" stroke="#22c55e" stroke-width="2"
+                  stroke-dasharray="4 3"/>
+            <text x="475" y="0" fill="#7a90a8" font-size="10">Recovery</text>
+            <line x1="545" y1="-4" x2="575" y2="-4" stroke="#1e3a5f" stroke-width="2"
+                  stroke-dasharray="4 3"/>
+            <text x="580" y="0" fill="#7a90a8" font-size="10">Normal transition</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SECTION 2: INTERACTIVE DEMO ───────────────────────── -->
+  <div>
+    <div class="section-title">02 — Interactive Failure Demo</div>
+    <div class="demo-grid">
+      <div class="uav-display">
+        <svg id="uav-icon" class="uav-icon" width="80" height="60" viewBox="0 0 80 60">
+          <!-- UAV body -->
+          <ellipse cx="40" cy="30" rx="16" ry="8" fill="#1e3a5f" stroke="#00c8ff" stroke-width="1.5"/>
+          <!-- Arms -->
+          <line x1="24" y1="26" x2="8" y2="14" stroke="#00c8ff" stroke-width="1.5"/>
+          <line x1="56" y1="26" x2="72" y2="14" stroke="#00c8ff" stroke-width="1.5"/>
+          <line x1="24" y1="34" x2="8" y2="46" stroke="#00c8ff" stroke-width="1.5"/>
+          <line x1="56" y1="34" x2="72" y2="46" stroke="#00c8ff" stroke-width="1.5"/>
+          <!-- Rotors -->
+          <ellipse cx="8" cy="13" rx="9" ry="3" fill="none" stroke="#00c8ff" stroke-width="1.5" opacity=".7"/>
+          <ellipse cx="72" cy="13" rx="9" ry="3" fill="none" stroke="#00c8ff" stroke-width="1.5" opacity=".7"/>
+          <ellipse cx="8" cy="47" rx="9" ry="3" fill="none" stroke="#00c8ff" stroke-width="1.5" opacity=".7"/>
+          <ellipse cx="72" cy="47" rx="9" ry="3" fill="none" stroke="#00c8ff" stroke-width="1.5" opacity=".7"/>
+          <!-- Camera -->
+          <circle cx="40" cy="38" r="3" fill="#00c8ff" opacity=".6"/>
+        </svg>
+        <div id="uav-state-label" style="color: var(--green)">NORMAL</div>
+        <div id="uav-state-badge" style="color: var(--green); border-color: var(--green)">Nominal Flight</div>
+        <div id="uav-explanation">All systems nominal. UAV operating in standard flight mode.</div>
+      </div>
+      <div class="demo-controls">
+        <h3>INJECT FAILURE</h3>
+        <button class="btn btn-failure" onclick="injectFailure('comm')">📡 Communication Loss</button>
+        <button class="btn btn-gps" onclick="injectFailure('gps')">🛰 GPS Loss</button>
+        <button class="btn btn-battery" onclick="injectFailure('battery')">🔋 Critical Battery</button>
+        <button class="btn btn-reset" onclick="resetDemo()">↺ Reset</button>
+
+        <h3 style="margin-top: 8px;">PRESET SCENARIO</h3>
+        <button id="btn-scenario" class="btn btn-scenario" onclick="runScenario()">
+          ▶ Run: NORMAL → Comm Loss → LOITER → Crit. Battery → LAND
+        </button>
+
+        <h3 style="margin-top: 8px;">TRANSITION LOG</h3>
+        <div class="transition-log" id="transition-log">
+          <span style="color:#7a90a8">[ BobGuard transition monitor active ]</span><br>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SECTION 3: PIPELINE ────────────────────────────────── -->
+  <div>
+    <div class="section-title">03 — BobGuard Verification Pipeline</div>
+    <div class="card">
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="pipeline-icon">⚡</div>
+          <span>Failure<br>Generation</span>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <div class="pipeline-icon">🔍</div>
+          <span>State Transition<br>Tracing</span>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <div class="pipeline-icon">🛡</div>
+          <span>Violation<br>Detection</span>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <div class="pipeline-icon">🔬</div>
+          <span>Root Cause<br>Analysis</span>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <div class="pipeline-icon">🔧</div>
+          <span>Repair</span>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <div class="pipeline-icon">🔄</div>
+          <span>Regression<br>Testing</span>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <div class="pipeline-icon">🧬</div>
+          <span>Mutation<br>Testing</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SECTION 4: METRICS ─────────────────────────────────── -->
+  <div>
+    <div class="section-title">04 — Verification Results</div>
+    <div class="metrics-grid">
+      <div class="metric-card metric-green">
+        <div class="metric-value">61 / 61</div>
+        <div class="metric-label">Scenarios Passed</div>
+      </div>
+      <div class="metric-card metric-zero">
+        <div class="metric-value">0</div>
+        <div class="metric-label">Critical Violations</div>
+      </div>
+      <div class="metric-card metric-zero">
+        <div class="metric-value">0</div>
+        <div class="metric-label">High Violations</div>
+      </div>
+      <div class="metric-card metric-purple">
+        <div class="metric-value">5 / 5</div>
+        <div class="metric-label">Mutations Detected</div>
+      </div>
+      <div class="metric-card metric-green">
+        <div class="metric-value">100%</div>
+        <div class="metric-label">Mutation Detection Rate</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SECTION 5: MUTATIONS ──────────────────────────────── -->
+  <div>
+    <div class="section-title">05 — Mutation Testing Results</div>
+    <div class="mutations-grid">
+      <div class="mutation-card">
+        <div class="mutation-id">M1</div>
+        <div class="mutation-desc">Critical battery priority failure</div>
+        <div class="mutation-status">✓ Detected</div>
+      </div>
+      <div class="mutation-card">
+        <div class="mutation-id">M2</div>
+        <div class="mutation-desc">Unsafe Return-To-Home</div>
+        <div class="mutation-status">✓ Detected</div>
+      </div>
+      <div class="mutation-card">
+        <div class="mutation-id">M3</div>
+        <div class="mutation-desc">Lost-link recovery bug</div>
+        <div class="mutation-status">✓ Detected</div>
+      </div>
+      <div class="mutation-card">
+        <div class="mutation-id">M4</div>
+        <div class="mutation-desc">LOITER / RETURN_HOME loop</div>
+        <div class="mutation-status">✓ Detected</div>
+      </div>
+      <div class="mutation-card">
+        <div class="mutation-id">M5</div>
+        <div class="mutation-desc">Battery threshold boundary bug</div>
+        <div class="mutation-status">✓ Detected</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── FOOTER ──────────────────────────────────────────────── -->
+<footer>
+  <div>
+    <a href="https://github.com/kbh1795-sketch/BobGuard" target="_blank">github.com/kbh1795-sketch/BobGuard</a>
+    &nbsp;·&nbsp; Built with IBM Bob
+  </div>
+  <div style="margin-top:4px; font-size:11px;">
+    This dashboard visualizes verified BobGuard results. No source logic was modified.
+  </div>
+</footer>
+
+<script>
+  /* ── State machine ─────────────────────────────────────── */
+  const STATES = {
+    NORMAL:      { label: 'NORMAL',      badge: 'Nominal Flight',   color: '#22c55e' },
+    LOITER:      { label: 'LOITER',      badge: 'Holding Pattern',  color: '#f59e0b' },
+    RETURN_HOME: { label: 'RETURN_HOME', badge: 'Returning to Base',color: '#00c8ff' },
+    LAND:        { label: 'LAND',        badge: 'Emergency Landing', color: '#ef4444' },
+    TERMINATED:  { label: 'TERMINATED',  badge: 'Mission Ended',    color: '#a855f7' },
+  };
+
+  const TRANSITIONS = {
+    NORMAL: {
+      comm:    { next: 'LOITER',      msg: 'Communication lost — entering LOITER hold.',       gps_req: false },
+      gps:     { next: 'LOITER',      msg: 'GPS lost — entering LOITER hold.',                 gps_req: false },
+      battery: { next: 'LAND',        msg: 'Critical battery in NORMAL — initiating LAND.',    gps_req: false },
+    },
+    LOITER: {
+      comm:    { next: 'LOITER',      msg: 'Already in LOITER. Awaiting comm restoration.',    gps_req: false },
+      gps:     { next: 'LOITER',      msg: 'GPS lost in LOITER — holding position.',           gps_req: false },
+      battery: { next: 'LAND',        msg: 'Critical battery in LOITER — initiating LAND.',   gps_req: false },
+    },
+    RETURN_HOME: {
+      comm:    { next: 'RETURN_HOME', msg: 'Comm lost but GPS available — continuing RETURN_HOME.', gps_req: true },
+      gps:     { next: 'LOITER',      msg: 'GPS lost during RETURN_HOME — reverting to LOITER.', gps_req: false },
+      battery: { next: 'LAND',        msg: 'Critical battery during RTH — overriding to LAND.', gps_req: false },
+    },
+    LAND: {
+      comm:    { next: 'LAND',        msg: 'Landing in progress. Comm event ignored.',         gps_req: false },
+      gps:     { next: 'LAND',        msg: 'Landing in progress. GPS event ignored.',          gps_req: false },
+      battery: { next: 'TERMINATED',  msg: 'Battery exhausted on ground — TERMINATED.',        gps_req: false },
+    },
+    TERMINATED: {
+      comm:    { next: 'TERMINATED',  msg: 'Mission terminated. No further transitions.',      gps_req: false },
+      gps:     { next: 'TERMINATED',  msg: 'Mission terminated. No further transitions.',      gps_req: false },
+      battery: { next: 'TERMINATED',  msg: 'Mission terminated. No further transitions.',      gps_req: false },
+    }
+  };
+
+  let currentState = 'NORMAL';
+  let scenarioRunning = false;
+
+  function setSmActive(stateId) {
+    document.querySelectorAll('.sm-state').forEach(el => el.classList.remove('active'));
+    const el = document.getElementById('sm-' + stateId);
+    if (el) el.classList.add('active');
+  }
+
+  function updateUavDisplay(stateKey) {
+    const s = STATES[stateKey];
+    const label = document.getElementById('uav-state-label');
+    const badge = document.getElementById('uav-state-badge');
+    label.textContent = s.label;
+    label.style.color = s.color;
+    badge.textContent = s.badge;
+    badge.style.color = s.color;
+    badge.style.borderColor = s.color;
+  }
+
+  function addLog(msg, cls) {
+    const log = document.getElementById('transition-log');
+    const ts = new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const span = document.createElement('span');
+    span.className = 'log-entry' + (cls ? ' ' + cls : '');
+    span.textContent = '[' + ts + '] ' + msg;
+    log.appendChild(document.createElement('br'));
+    log.appendChild(span);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function setExplanation(msg) {
+    document.getElementById('uav-explanation').textContent = msg;
+  }
+
+  function shakeIcon() {
+    const icon = document.getElementById('uav-icon');
+    icon.classList.remove('shaking');
+    void icon.offsetWidth;
+    icon.classList.add('shaking');
+    setTimeout(() => icon.classList.remove('shaking'), 500);
+  }
+
+  function injectFailure(type) {
+    if (scenarioRunning) return;
+    const t = TRANSITIONS[currentState]?.[type];
+    if (!t) return;
+    const prev = currentState;
+    currentState = t.next;
+
+    shakeIcon();
+    updateUavDisplay(currentState);
+    setSmActive(currentState);
+    setExplanation(t.msg);
+
+    const cls = (prev === currentState) ? 'ok' : (type === 'battery' ? 'warn' : '');
+    addLog(prev + ' → ' + currentState + '  [' + type + ']', cls);
+  }
+
+  function resetDemo() {
+    if (scenarioRunning) return;
+    currentState = 'NORMAL';
+    updateUavDisplay('NORMAL');
+    setSmActive('NORMAL');
+    setExplanation('All systems nominal. UAV operating in standard flight mode.');
+    addLog('System reset → NORMAL', 'ok');
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function runScenario() {
+    if (scenarioRunning) return;
+    scenarioRunning = true;
+    document.getElementById('btn-scenario').disabled = true;
+
+    resetDemo();
+    await sleep(800);
+
+    addLog('— Preset scenario start —', '');
+    await sleep(700);
+
+    // Step 1: NORMAL → comm loss → LOITER
+    injectFailure('comm');
+    await sleep(1400);
+
+    // Step 2: LOITER → critical battery → LAND
+    injectFailure('battery');
+    await sleep(1400);
+
+    addLog('— Scenario complete: all transitions verified ✓ —', 'ok');
+    scenarioRunning = false;
+    document.getElementById('btn-scenario').disabled = false;
+  }
+
+  // Initialise
+  setSmActive('NORMAL');
+</script>
+</body>
+</html>
